@@ -7,3 +7,4 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 libc = "0.1"
+lazy_static = "0.1"

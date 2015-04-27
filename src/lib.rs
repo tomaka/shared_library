@@ -1,5 +1,8 @@
 extern crate libc;
 
+#[macro_use]
+extern crate lazy_static;
+
 pub mod dynamic_library;
 
 /// Error that can happen while loading the shared library.
@@ -25,6 +28,10 @@ macro_rules! shared_library {
 
     ($struct_name:ident, fn $($rest:tt)+) => {
         shared_library!(__impl $struct_name [] [] [] fn $($rest)+);
+    };
+
+    ($struct_name:ident, static $($rest:tt)+) => {
+        shared_library!(__impl $struct_name [] [] [] static $($rest)+);
     };
 
     ($struct_name:ident, $def_path:expr, $($rest:tt)+) => {
@@ -63,6 +70,16 @@ macro_rules! shared_library {
 
     (__impl $struct_name:ident
             [$($p1:tt)*] [$($p2:tt)*] [$($p3:tt)*]
+            static $name:ident:$ty:ty, $($rest:tt)*
+    ) => {
+        shared_library!(__impl $struct_name
+                       [$($p1)*, $name: $ty]
+                       [$($p2)*]
+                       [$($p3)*] $($rest)*);
+    };
+
+    (__impl $struct_name:ident
+            [$($p1:tt)*] [$($p2:tt)*] [$($p3:tt)*]
             fn $name:ident($($p:ident:$ty:ty),*), $($rest:tt)*
     ) => {
         shared_library!(__impl $struct_name
@@ -72,7 +89,9 @@ macro_rules! shared_library {
 
     (__impl $struct_name:ident [$(,$mem_n:ident:$mem_t:ty)+] [$($p2:tt)*] [$($p3:tt)*]) => {
         /// Symbols loaded from a shared library.
+        #[allow(non_snake_case)]
         pub struct $struct_name {
+            _library_guard: $crate::dynamic_library::DynamicLibrary,
             $(
                 pub $mem_n: $mem_t,
             )+
@@ -80,6 +99,7 @@ macro_rules! shared_library {
 
         impl $struct_name {
             /// Tries to open the dynamic library.
+            #[allow(non_snake_case)]
             pub fn open(path: &::std::path::Path) -> Result<$struct_name, $crate::LoadingError> {
                 use std::mem;
 
@@ -96,6 +116,7 @@ macro_rules! shared_library {
                 )+
 
                 Ok($struct_name {
+                    _library_guard: dylib,
                     $(
                         $mem_n: unsafe { mem::transmute($mem_n) },
                     )+

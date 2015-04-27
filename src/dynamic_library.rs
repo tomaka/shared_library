@@ -185,6 +185,11 @@ mod dl {
     use std::str;
     use libc;
     use std::ptr;
+    use std::sync::Mutex;
+
+    lazy_static! {
+        static ref LOCK: Mutex<()> = Mutex::new(());
+    }
 
     pub fn open(filename: Option<&OsStr>) -> Result<*mut u8, String> {
         check_for_errors_in(|| {
@@ -211,8 +216,6 @@ mod dl {
     pub fn check_for_errors_in<T, F>(f: F) -> Result<T, String> where
         F: FnOnce() -> T,
     {
-        use sync::{StaticMutex, MUTEX_INIT};
-        static LOCK: StaticMutex = MUTEX_INIT;
         unsafe {
             // dlerror isn't thread safe, so we need to lock around this entire
             // sequence

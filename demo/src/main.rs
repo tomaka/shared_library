@@ -12,6 +12,8 @@ shared_library!(Test1,
 shared_library!(Test2, "libtest.dll",
     pub fn hello() -> libc::c_int,
     fn hello2(),
+
+    static CONSTANT: &'static u32,
 );
 
 fn main() {
