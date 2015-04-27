@@ -131,32 +131,41 @@ macro_rules! shared_library {
     };
 
     (__write_static_fns $struct_name:ident [$($p1:tt)*] [$defpath:expr] [$($standalones:item)+]) => {
-        impl ::std::default::Default for $struct_name {
-            fn default() -> $struct_name {
-                let path = ::std::path::Path::new($defpath);
-                $struct_name::open(path).ok()
-                                        .expect(concat!("Could not open dynamic \
-                                                         library `", stringify!($struct_name),
-                                                         "`"))
-            }
-        }
-
         impl $struct_name {
             /// This function is used by the regular functions.
             fn get_static_ref() -> &'static $struct_name {
-                use std::sync::{Once, ONCE_INIT};
+                $struct_name::try_loading().ok()
+                                           .expect(concat!("Could not open dynamic \
+                                                            library `", stringify!($struct_name),
+                                                            "`"))
+            }
+
+            /// Try loading the static symbols linked to this library.
+            pub fn try_loading() -> Result<&'static $struct_name, $crate::LoadingError> {
+                use std::sync::{Mutex, Once, ONCE_INIT};
+                use std::mem;
 
                 unsafe {
-                    static mut DATA: *const $struct_name = 0 as *const $struct_name;
+                    static mut DATA: *const Mutex<Option<$struct_name>> = 0 as *const _;
 
                     static mut INIT: Once = ONCE_INIT;
                     INIT.call_once(|| {
-                        let data = Box::new(Default::default());
+                        let data = Box::new(Mutex::new(None));
                         DATA = &*data;
+                        mem::forget(data);
                     });
 
-                    let data: &$struct_name = &*DATA;
-                    data
+                    let data: &Mutex<Option<$struct_name>> = &*DATA;
+                    let mut data = data.lock().unwrap();
+
+                    if let Some(ref data) = *data {
+                        return Ok(mem::transmute(data));
+                    }
+
+                    let path = ::std::path::Path::new($defpath);
+                    let result = try!($struct_name::open(path));
+                    *data = Some(result);
+                    Ok(mem::transmute(data.as_ref().unwrap()))
                 }
             }
         }

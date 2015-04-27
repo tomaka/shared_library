@@ -205,7 +205,7 @@ mod dl {
     const LAZY: libc::c_int = 1;
 
     unsafe fn open_external(filename: &OsStr) -> *mut u8 {
-        let s = filename.to_cstring().unwrap();
+        let s = ::std::ffi::CString::new(filename).unwrap();
         dlopen(s.as_ptr(), LAZY) as *mut u8
     }
 
