@@ -181,7 +181,8 @@ mod test {
           target_os = "bitrig",
           target_os = "openbsd"))]
 mod dl {
-    use std::ffi::{CStr, OsStr};
+    use std::ffi::{CString, CStr, OsStr};
+    use std::os::unix::ffi::OsStrExt;
     use std::str;
     use libc;
     use std::ptr;
@@ -205,7 +206,7 @@ mod dl {
     const LAZY: libc::c_int = 1;
 
     unsafe fn open_external(filename: &OsStr) -> *mut u8 {
-        let s = ::std::ffi::CString::new(filename).unwrap();
+        let s = CString::new(filename.as_bytes().to_vec()).unwrap();
         dlopen(s.as_ptr(), LAZY) as *mut u8
     }
 
