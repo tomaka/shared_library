@@ -1,0 +1,10 @@
+[package]
+name = "demo"
+version = "0.1.0"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+
+[dependencies.shared_library]
+path = ".."
+
+[dependencies]
+libc = "0.1"
