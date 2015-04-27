@@ -8,6 +8,7 @@ after_success:
   - |
         [ $TRAVIS_BRANCH = master ] &&
         [ $TRAVIS_PULL_REQUEST = false ] &&
+        cargo doc &&
         echo '<meta http-equiv=refresh content=0;url=[CRATE NAME]/index.html>' > target/doc/index.html &&
         git clone https://github.com/davisp/ghp-import &&
         ./ghp-import/ghp-import -n target/doc &&
