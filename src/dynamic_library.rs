@@ -300,9 +300,9 @@ mod dl {
             None => {
                 let mut handle = ptr::null_mut();
                 let succeeded = unsafe {
-                    GetModuleHandleExW(0 as libc::DWORD, ptr::null(), &mut handle)
+                    GetModuleHandleExW(0, ptr::null(), &mut handle)
                 };
-                if succeeded == libc::FALSE {
+                if succeeded == 0 {
                     Err(format!("{}", IoError::last_os_error()))
                 } else {
                     Ok(handle as *mut u8)
@@ -345,8 +345,8 @@ mod dl {
     extern "system" {
         fn SetLastError(error: libc::size_t);
         fn LoadLibraryW(name: *const libc::c_void) -> *mut libc::c_void;
-        fn GetModuleHandleExW(dwFlags: libc::DWORD, name: *const u16,
-                              handle: *mut *mut libc::c_void) -> libc::BOOL;
+        fn GetModuleHandleExW(dwFlags: u32, name: *const u16,
+                              handle: *mut *mut libc::c_void) -> i32;
         fn GetProcAddress(handle: *mut libc::c_void,
                           name: *const libc::c_char) -> *mut libc::c_void;
         fn FreeLibrary(handle: *mut libc::c_void);
