@@ -23,6 +23,9 @@ pub struct DynamicLibrary {
     handle: *mut u8
 }
 
+unsafe impl Send for DynamicLibrary {}
+unsafe impl Sync for DynamicLibrary {}
+
 impl Drop for DynamicLibrary {
     fn drop(&mut self) {
         match dl::check_for_errors_in(|| {
