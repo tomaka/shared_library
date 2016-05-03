@@ -8,4 +8,4 @@ repository = "https://github.com/tomaka/shared_library/"
 
 [dependencies]
 libc = "0.2"
-lazy_static = "0.1"
+lazy_static = "0.2"
