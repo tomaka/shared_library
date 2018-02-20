@@ -28,13 +28,10 @@ unsafe impl Sync for DynamicLibrary {}
 
 impl Drop for DynamicLibrary {
     fn drop(&mut self) {
-        match dl::check_for_errors_in(|| {
-            unsafe {
-                dl::close(self.handle)
-            }
+        if let Err(str) = dl::check_for_errors_in(|| unsafe {
+            dl::close(self.handle)
         }) {
-            Ok(()) => {},
-            Err(str) => panic!("{}", str)
+            panic!("{}", str)
         }
     }
 }
@@ -50,23 +47,19 @@ impl DynamicLibrary {
 
     /// Lazily open a dynamic library. When passed None it gives a
     /// handle to the calling process
-    pub fn open(filename: Option<&Path>) -> Result<DynamicLibrary, String> {
-        let maybe_library = dl::open(filename.map(|path| path.as_os_str()));
-
+    pub fn open(filename: Option<&Path>) -> Result<Self, String> {
         // The dynamic library must not be constructed if there is
         // an error opening the library so the destructor does not
         // run.
-        match maybe_library {
-            Err(err) => Err(err),
-            Ok(handle) => Ok(DynamicLibrary { handle: handle })
-        }
+        dl::open(filename.map(|path| path.as_os_str()))
+            .map(|handle| DynamicLibrary { handle })
     }
 
     /// Prepends a path to this process's search path for dynamic libraries
     pub fn prepend_search_path(path: &Path) {
-        let mut search_path = DynamicLibrary::search_path();
+        let mut search_path = Self::search_path();
         search_path.insert(0, path.to_path_buf());
-        env::set_var(DynamicLibrary::envvar(), &DynamicLibrary::create_path(&search_path));
+        env::set_var(Self::envvar(), &Self::create_path(&search_path));
     }
 
     /// From a slice of paths, create a new vector which is suitable to be an
@@ -74,10 +67,10 @@ impl DynamicLibrary {
     pub fn create_path(path: &[PathBuf]) -> OsString {
         let mut newvar = OsString::new();
         for (i, path) in path.iter().enumerate() {
-            if i > 0 { newvar.push(DynamicLibrary::separator()); }
+            if i > 0 { newvar.push(Self::separator()); }
             newvar.push(path);
         }
-        return newvar;
+        newvar
     }
 
     /// Returns the environment variable for this process's dynamic library
@@ -92,6 +85,7 @@ impl DynamicLibrary {
         }
     }
 
+    //TODO: turn this and `envvar` into associated constants
     fn separator() -> &'static str {
         if cfg!(windows) { ";" } else { ":" }
     }
@@ -99,7 +93,7 @@ impl DynamicLibrary {
     /// Returns the current search path for dynamic libraries being used by this
     /// process
     pub fn search_path() -> Vec<PathBuf> {
-        match env::var_os(DynamicLibrary::envvar()) {
+        match env::var_os(Self::envvar()) {
             Some(var) => env::split_paths(&var).collect(),
             None => Vec::new(),
         }
@@ -111,16 +105,12 @@ impl DynamicLibrary {
         // T but that feature is still unimplemented
 
         let raw_string = CString::new(symbol).unwrap();
-        let maybe_symbol_value = dl::check_for_errors_in(|| {
-            dl::symbol(self.handle, raw_string.as_ptr() as *const _)
-        });
-
         // The value must not be constructed if there is an error so
         // the destructor does not run.
-        match maybe_symbol_value {
-            Err(err) => Err(err),
-            Ok(symbol_value) => Ok(mem::transmute(symbol_value))
-        }
+        dl::check_for_errors_in(|| {
+                dl::symbol(self.handle, raw_string.as_ptr() as *const _)
+            })
+            .map(|sym| mem::transmute(sym))
     }
 }
 
@@ -178,6 +168,7 @@ mod test {
     }
 }
 
+//TODO: use `unix` shortcut?
 #[cfg(any(target_os = "linux",
           target_os = "android",
           target_os = "macos",
@@ -203,12 +194,10 @@ mod dl {
     }
 
     pub fn open(filename: Option<&OsStr>) -> Result<*mut u8, String> {
-        check_for_errors_in(|| {
-            unsafe {
-                match filename {
-                    Some(filename) => open_external(filename),
-                    None => open_internal(),
-                }
+        check_for_errors_in(|| unsafe {
+            match filename {
+                Some(filename) => open_external(filename),
+                None => open_internal(),
             }
         })
     }
@@ -247,8 +236,10 @@ mod dl {
         }
     }
 
-    pub unsafe fn symbol(handle: *mut u8,
-                         symbol: *const libc::c_char) -> *mut u8 {
+    pub unsafe fn symbol(
+        handle: *mut u8,
+        symbol: *const libc::c_char,
+    ) -> *mut u8 {
         dlsym(handle as *mut libc::c_void, symbol) as *mut u8
     }
     pub unsafe fn close(handle: *mut u8) {
@@ -256,12 +247,18 @@ mod dl {
     }
 
     extern {
-        fn dlopen(filename: *const libc::c_char,
-                  flag: libc::c_int) -> *mut libc::c_void;
+        fn dlopen(
+            filename: *const libc::c_char,
+            flag: libc::c_int,
+        ) -> *mut libc::c_void;
         fn dlerror() -> *mut libc::c_char;
-        fn dlsym(handle: *mut libc::c_void,
-                 symbol: *const libc::c_char) -> *mut libc::c_void;
-        fn dlclose(handle: *mut libc::c_void) -> libc::c_int;
+        fn dlsym(
+            handle: *mut libc::c_void,
+            symbol: *const libc::c_char,
+        ) -> *mut libc::c_void;
+        fn dlclose(
+            handle: *mut libc::c_void,
+        ) -> libc::c_int;
     }
 }
 
@@ -355,10 +352,15 @@ mod dl {
     extern "system" {
         fn SetLastError(error: libc::size_t);
         fn LoadLibraryW(name: *const libc::c_void) -> *mut libc::c_void;
-        fn GetModuleHandleExW(dwFlags: u32, name: *const u16,
-                              handle: *mut *mut libc::c_void) -> i32;
-        fn GetProcAddress(handle: *mut libc::c_void,
-                          name: *const libc::c_char) -> *mut libc::c_void;
+        fn GetModuleHandleExW(
+            dwFlags: u32,
+            name: *const u16,
+            handle: *mut *mut libc::c_void,
+        ) -> i32;
+        fn GetProcAddress(
+            handle: *mut libc::c_void,
+            name: *const libc::c_char,
+        ) -> *mut libc::c_void;
         fn FreeLibrary(handle: *mut libc::c_void);
         fn SetErrorMode(uMode: libc::c_uint) -> libc::c_uint;
     }
