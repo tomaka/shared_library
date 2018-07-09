@@ -18,6 +18,7 @@ use std::env;
 use std::ffi::{CString, OsString};
 use std::mem;
 use std::path::{Path, PathBuf};
+use libc;
 
 pub struct DynamicLibrary {
     handle: *mut u8
@@ -36,6 +37,17 @@ impl Drop for DynamicLibrary {
     }
 }
 
+/// Special handles to be used with the `symbol_special` function. These are 
+/// provided by a GNU only extension and are not included as part of the POSIX 
+/// standard. 
+///
+/// See https://linux.die.net/man/3/dlsym for their behaviour.
+#[cfg(target_os = "linux")]
+pub enum SpecialHandles {
+    Next,
+    Default,
+}
+
 impl DynamicLibrary {
     // FIXME (#12938): Until DST lands, we cannot decompose &str into
     // & and str, so we cannot usefully take ToCStr arguments by
@@ -45,8 +57,10 @@ impl DynamicLibrary {
     // should be removed, and arguments bound by ToCStr should be
     // passed by reference. (Here: in the `open` method.)
 
-    /// Lazily open a dynamic library. When passed None it gives a
-    /// handle to the calling process
+    /// Lazily loads the dynamic library named `filename` into memory and 
+    /// then returns an opaque "handle" for that dynamic library.
+    ///
+    /// Returns a handle to the calling process when passed `None`.
     pub fn open(filename: Option<&Path>) -> Result<Self, String> {
         // The dynamic library must not be constructed if there is
         // an error opening the library so the destructor does not
@@ -99,7 +113,11 @@ impl DynamicLibrary {
         }
     }
 
-    /// Access the value at the symbol of the dynamic library
+    /// Returns the address of where symbol `symbol` was loaded into memory.
+    ///
+    /// In POSIX compliant systems, we return 'Err' if the symbol was not found, 
+    /// in this library or any of the libraries that were automatically loaded 
+    /// when this library was loaded.
     pub unsafe fn symbol<T>(&self, symbol: &str) -> Result<*mut T, String> {
         // This function should have a lifetime constraint of 'a on
         // T but that feature is still unimplemented
@@ -108,7 +126,32 @@ impl DynamicLibrary {
         // The value must not be constructed if there is an error so
         // the destructor does not run.
         dl::check_for_errors_in(|| {
-                dl::symbol(self.handle, raw_string.as_ptr() as *const _)
+                dl::symbol(self.handle as *mut libc::c_void, raw_string.as_ptr() as *const _)
+            })
+            .map(|sym| mem::transmute(sym))
+    }
+
+    /// Returns the address of the first occurance of symbol `symbol` using the 
+    /// default library search order if you use `SpecialHandles::Default`.
+    ///
+    /// Returns the address of the next occurance of symbol `symbol` after the 
+    /// current library in the default library search order if you use 
+    /// `SpecialHandles::Next`.
+    #[cfg(target_os = "linux")]
+    pub unsafe fn symbol_special<T>(handle: SpecialHandles, symbol: &str) -> Result<*mut T, String> {
+        // This function should have a lifetime constraint of 'a on
+        // T but that feature is still unimplemented
+
+        let handle = match handle {
+            SpecialHandles::Next => mem::transmute::<libc::c_long, _>(-1),
+            SpecialHandles::Default => ::std::ptr::null_mut(),
+        };
+
+        let raw_string = CString::new(symbol).unwrap();
+        // The value must not be constructed if there is an error so
+        // the destructor does not run.
+        dl::check_for_errors_in(|| {
+                dl::symbol(handle, raw_string.as_ptr() as *const _)
             })
             .map(|sym| mem::transmute(sym))
     }
@@ -117,7 +160,6 @@ impl DynamicLibrary {
 #[cfg(all(test, not(target_os = "ios")))]
 mod test {
     use super::*;
-    use libc;
     use std::mem;
     use std::path::Path;
 
@@ -237,11 +279,12 @@ mod dl {
     }
 
     pub unsafe fn symbol(
-        handle: *mut u8,
+        handle: *mut libc::c_void,
         symbol: *const libc::c_char,
     ) -> *mut u8 {
-        dlsym(handle as *mut libc::c_void, symbol) as *mut u8
+        dlsym(handle, symbol) as *mut u8
     }
+
     pub unsafe fn close(handle: *mut u8) {
         dlclose(handle as *mut libc::c_void); ()
     }
@@ -341,8 +384,8 @@ mod dl {
         }
     }
 
-    pub unsafe fn symbol(handle: *mut u8, symbol: *const libc::c_char) -> *mut u8 {
-        GetProcAddress(handle as *mut libc::c_void, symbol) as *mut u8
+    pub unsafe fn symbol(handle: *mut libc::c_void, symbol: *const libc::c_char) -> *mut u8 {
+        GetProcAddress(handle, symbol) as *mut u8
     }
     pub unsafe fn close(handle: *mut u8) {
         FreeLibrary(handle as *mut libc::c_void); ()
